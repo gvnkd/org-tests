@@ -1,0 +1,219 @@
+* Введение
+* Структура
+  Логически конфигурация деплоя состоит из нескольких частей.
+
+** Окружение
+   Определения в конфигурации окружения описывают общие сущности характерные для всех объектов. Такими могут являться: список пользователей и их *ssh-ключи* и *pgp-ключи*, источники *apt-репозиториев*, учётные данные для доступа к системам виртуализации и(ли) облакам, и т.д.
+   Файл определения окружения может выглядеть, например так:
+   #+BEGIN_SRC yaml
+     ---
+     apt:
+       sources:
+	 local:
+	   enabled: yes
+	   url: "http://mirrors.dev.local/"
+     pve:
+       api_url: "pve.local.domain"
+       username: "prod@pve"
+       password: !vault |
+	       $ANSIBLE_VAULT;1.2;AES256;prod
+	       37363439386464653161343832313634643766323630383065363532333435323136663064303661
+	       3437366635363430623664303537613936336663383331320a636232373463383366393037653963
+	       36353337333063383131616237326365386363613564373836633363626237313138636464323566
+	       3365653037376230380a393635336337626637653664623765326435323530326130306136333138
+	   37663062613261343164663861613734353463393530353133306561363034663239
+     users:
+       alice:
+	 ssh-key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICrTiVrnp5ZxMSM9ZFGSuGa32KMBLBiPcy13Q+KEs5SL alice@altlinux.org"
+       robot:
+	 ssh-key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCog6HlFZso6T4Lh7o2RJzL+ctCVKAnXSvDlB/S3Ry9TAsbaV5fAMmxtLIffxtRMYF/Upnoa9nWNkaSIGiddr5gRQzvPIkSze0jaqgg4TqwL0Hp2ciG/zJaNcrBrRuN1PZTfQIk2LJz1H62YJY66ZdhFYBZIzm94R0/xMXxBF6rrQM/Z4yIm8UQTK2uzS0gr5SgRTUJJJPmkEVB8DTTkopnKDvfCeAPhtipO3yWRWn4mlNToEPBB0LgK3jmlurFrAhqwm0lnk2MdM/ftjKZARr/aZg8ju6oGCLjeqODny/4wGfYX/+k0m2hnU+YLXgR2fcIEP+y/pUdJ2tkN0WK9mT8nCxU8gdJf+Agwe6gRalGajaiHhID1S58tcrXyiOetSq1ZiGLDPDuRSE7KvtCWwvfXnfHYCN69SgyvEXO5x3Q08A6uTXE+IDCFhkSRLOKmv4awetppIvaXfiaVYXSzrKMRGDgYLcoSbcz33TGSYjAA0ZYCWHtCuonmgJEzpriLsoYZji9ZGW+rAvUMdnA0AV8Ygee6ype7ZW9LEOCoHxCq+3TJ7bj60X3QJX1DvV9feMRTRlaeRmtEtTIvM6ZZcqEJQFxDXYPA69ev1Ve501PjmPRId14ORK7Z9+r4c8a2Bj9nPSq49RzIjxWH/6GDMAp05Wxlu2Is+5VU2TrRzxSAw== robot@automation"
+   #+END_SRC
+   Эти параметры будут использованы для всех объектов конфигурации развёртываемых в данном окружении.
+
+** Стек
+   Стеком является непротиворичивое с точки зрения конфигурации множество объектов исполняющих приложения развёртываемых в рамках конкретного окружения. Ими могут быть: виртуальные машины, железные сервера, инстансы в облачных сервисах, и т.д. Основным и единственным строгим требованием к объекту стека является наличие доступа по *ssh* и беспарольный *sudo*, либо доступ по *ssh* под пользователем *root*.
+   Конфигурация стека может включать в себя: имя домена, список DNS-серверов, список виртуальных машин/инстансов с параметрами, конфигурация сети и другие общие для всех приложений параметры.
+   Пример конфигурации стека:
+   #+BEGIN_SRC yaml
+     ---
+     name: test
+     domain: domain.alt
+     nameservers:
+       - ns1.smb.basealt.ru
+       - ns2.smb.basealt.ru
+     nodes:
+       dc:
+	 count: 1
+	 cpus: 1
+	 cores: 2
+	 mem: 1024
+	 template: alt-server-82-x64
+	 net:
+	   eth0:
+	     bridge: "vmbr1"
+	     tag: 10
+	     descr: pub
+	     ipv4:
+	     - "10.64.0.20/24"
+	   eth1:
+	     bridge: "vmbr1"
+	     tag: 901
+	     descr: priv
+	     ipv4: [ "10.64.6.1/24" ]
+	     search:
+	     - "domain.alt"
+       cl:
+	 count: 1
+	 cpus: 1
+	 cores: 2
+	 mem: 1024
+	 template: alt-workstation-82-x8664
+	 net:
+	   eth0:
+	     bridge: "vmbr1"
+	     tag: 10
+	     descr: pub
+	     ipv4:
+	     - "10.64.0.21/24"
+	     default: "10.64.0.1"
+	     nameservers:
+	     - "8.8.8.8"
+	   eth1:
+	     bridge: "vmbr1"
+	     tag: 901
+	     descr: priv
+	     ipv4: [ "10.64.6.2/24" ]
+	     nameservers:
+	     - "10.64.6.1"
+	     search:
+	     - "domain.alt"
+   #+END_SRC
+
+** Приложения
+   Приложениями являются конечные сервисы с которыми тем или иным образом общается конечный пользователь стека. Для примера: samba domain controller, ntp-server, dhcp-server, bind, NFS-share, redmine, gateway to internet/intranet, etc. Другими словами, приложение -- это некая сущность предоставляющая некий сервис необходимый пользователю, у которой есть свой endpoint и некий протокол общения с ней.
+   Каждое приложение жёстко привязано к объекту(ам) стека и разворачивается на них. Если идеология приложения подразумевает функции High Availability и/или Fault Tolerance, то оно может быть развёрнуто на нескольких объектах стека.
+   Также, если необходимо, то приложение может иметь собственный конфиг в рамках конкретного стека. Эта возможность существует скорее для удобства и помогает поддерживать общую конфигурацию приложений лаконичной и незагромождать её лишними деталями.
+   Пример конфигурации приложений:
+   #+BEGIN_SRC yaml
+     ---
+     bind:
+	 binds: [ "b", "c" ]
+     dhcp:
+	 binds: [ "b" ]
+     tftp:
+	 binds: [ "b" ]
+     mirror:
+	 binds: [ "b" ]
+     aptcache:
+	 binds: [ "b" ]
+     redmine:
+	 binds: [ "c" ]
+   #+END_SRC
+
+   Пример конфигурации конкретного приложения:
+   #+BEGIN_SRC yaml
+---
+allow_query:
+  - any
+listen_ipv4:
+  - any
+listen_ipv6:
+  - any
+acls:
+  - name: acl1
+    match_list:
+      - 10.64.200.0/24
+forwarders:
+  - '8.8.8.8'
+  - '8.8.4.4'
+recursion: true
+check_hosts: 'master ignore'
+zone_networks:
+  - '10.64.200'
+  - '10.64.201'
+zone_ipv6_networks: [ ]
+#  - '2001:db8::/48'
+zone_name: 'smb.basealt.ru'
+zone_master_server_ip: 10.64.200.1
+zone_name_servers:
+  - ns1
+  - ns2
+zone_hosts:
+  - name: ns1
+    ip: 10.64.200.1
+  - name: ns2
+    ip: 10.64.200.2
+  - name: tftp
+    ip: 10.64.200.1
+    aliases:
+      - www
+zone_mail_servers: []
+zone_services:
+  - name: _ldap._tcp
+    weight: 100
+    port: 88
+    target: srv010
+zone_text:
+  - name: _kerberos
+    text: KERBEROS.ACME-INC.COM
+  - name: '@'
+    text:
+      - 'some text'
+      - 'more text'
+   #+END_SRC
+
+* Как мне...
+** подготовить рабочее окружение
+   Рабочее окружение для развёртывания стеков состоит из четырёх частей:
+   1. набор ансибл-плейбук и ролей
+   2. конфигурация окружений
+   3. конфигурация стеков
+   4. база с паролями от шифрованных параметров окружений и стеков
+
+   В общем случае последовательность действий такова:
+   #+BEGIN_SRC sh
+     # клонируем ансибл-плейбуки
+     git clone git@bitbucket.org:altlinuxteam/infra.git
+     # клонируем окружения
+     git clone git@bitbucket.org:altlinuxteam/infra-envs.git infra/vars/envs/
+     # клонируем стеки
+     git clone git@bitbucket.org:altlinuxteam/infra-stacks.git infra/vars/stacks/
+     # клонируем базу
+     git clone git@bitbucket.org:altlinuxteam/passdb.git ~/.pass/alt
+
+     cd infra
+     nix-shell
+     ./infra.sh test stand-samba --check
+   #+END_SRC
+
+   Примечание: на данный момент, т.к. используются некоторые возможности, которые ещё не вошли в официальный релиз *ansible*, то для сборки версии *ansible* из гита используется [[https://nixos.org/nix/][nix]]. Это возможно изменится в скором времени.
+
+** развернуть стек
+   Выполнить скрипт-обёртку с параметрами: имя окружения, имя стека
+   #+BEGIN_SRC sh
+     ./infra.sh test stand-samba
+   #+END_SRC
+   Этот скрипт ожидает, что у вас есть локальная база паролей с паролем от *ansible-vault* и она находится в *~/.pass/alt*, а также есть *ssh-ключ* от базовых образов и он либо загружен в *ssh-agent*, либо прописан в *~/.ssh/config*.
+   Если вы хотите сделать тоже самое руками, например для отладки, то последовательность действий может выглядеть примерно так:
+   #+BEGIN_SRC sh
+     git clone git@bitbucket.org:altlinuxteam/passdb.git /tmp/passdb
+     PASSWORD_STORE_DIR=/tmp/passdb/ PASSWORD_STORE_GIT=${PASSWORD_STORE_DIR} pass ansible/vault-pass/test > .pass-test
+     ansible-playbook -i vars/envs/hosts-test -e env_name=test -e stack_name=stand-samba --vault-id test@.pass-test stack.yml
+   #+END_SRC
+   Ожидается, что в текущий каталог уже склонированны репозитории *infra*, *infra-envs* и *infra-stacks*. Как это сделать смотрите в секции "Как мне [[подготовить рабочее окружение]]?".
+
+** развернуть стек с пересозданием всех виртуалок
+   Для этого существует параметр *redeploy_all*
+   #+BEGIN_SRC sh
+     ./infra.sh test stand-samba -e redeploy_all=yes
+   #+END_SRC
+   При это вначале будут удалены все объекты определённые в *stack.yml*, а затем начнётся обычная процедура развёртывания
+
+** почистить за собой, aka удалить все виртуалки
+   По аналогии с пересозданием и для этого существует отдельная опция *destroy_all*
+   #+BEGIN_SRC sh
+     ./infra.sh test stand-samba -e destroy_all=yes
+   #+END_SRC
+   После удаления всех динамических ресурсов определённых в *stack.yml* процедура завершится.
+
+* Дополнительная информация
